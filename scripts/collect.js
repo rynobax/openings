@@ -31,7 +31,7 @@ SPEEDS.forEach((speed) =>
   })
 );
 
-const MIN_GAME_LIMIT = 100000;
+const MIN_GAME_LIMIT = 1000000;
 const MOVES_PER_VARIATION = 2;
 
 async function getOpeningFromLichess(fen, speeds, ratings) {
@@ -49,88 +49,69 @@ async function getOpeningFromLichess(fen, speeds, ratings) {
   });
 }
 
-async function retryableGetOpening(fen) {
-  const allResults = [];
-  let todo = [...PERMUTATIONS];
-  while (allResults.length < PERMUTATIONS.length) {
-    console.log(`todo: ${todo.length}`);
-    const results = await Promise.allSettled(
-      todo.map(async ({ speed, rating, id }) => {
-        const res = await getOpeningFromLichess(fen, [speed], [rating]);
-        return { res, id, speed, rating };
-      })
-    );
-    let hitRateLimit = false;
-    results.forEach((pres) => {
-      if (pres.status === 'fulfilled') {
-        const { res, speed, rating, id } = pres.value;
-        allResults.push({ res, speed, rating });
-        todo = todo.filter((e) => e.id !== id);
-      } else if (pres.reason instanceof TooManyRequests) {
-        hitRateLimit = true;
+async function retryableGetOpening(fen, speed, rating) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const res = await getOpeningFromLichess(fen, [speed], [rating]);
+      return res;
+    } catch (err) {
+      if (err instanceof TooManyRequests) {
+        console.log('hit rate limit, waiting 60 sec');
+        await wait(62 * 1000);
       } else {
-        throw new Error(pres.reason);
+        throw err;
       }
-    });
-    if (hitRateLimit) {
-      console.log('Hit rate limit, waiting a minute');
-      await wait(1000 * 65);
     }
   }
-  return allResults;
 }
 
-async function getAllOpeningsFromLichess(fen) {
-  const allResults = await retryableGetOpening(fen);
-  const results = [];
-  const moves = {};
-  allResults.forEach(({ res, speed, rating }) => {
-    results.push({
-      speed,
-      rating,
-      result: { white: res.white, black: res.black, draws: res.draws },
-      fen,
-    });
-    res.moves.forEach((move) => {
-      const playedCount = res.white + res.draws + res.black;
-      moves[move.san] = (moves[move.san] || 0) + playedCount;
-    });
-  });
-  console.log(moves);
-  const movesToCheck = Object.keys(moves).filter(
-    (move) => moves[move] >= MIN_GAME_LIMIT
-  );
-  return { results, movesToCheck };
-}
+const getTotalMoves = (move) => move.white + move.draws + move.black;
 
-async function main() {
-  const start = Date.now();
+const START_INDEX = 0;
+
+const start = Date.now();
+let completed = 0;
+
+async function doStuff(lp, speed, rating) {
   const chess = new Chess();
   const checkedPositions = new Set();
   const positionsToCheck = [chess.fen()];
   const allResults = [];
-  let completed = 0;
   while (positionsToCheck.length > 0) {
-    console.log(`${positionsToCheck.length} positions left in queue`);
+    console.log(`${lp}${positionsToCheck.length} positions left in queue`);
     const elapsedMinutes = (Date.now() - start) / (60 * 1000);
     const rate = ((completed / elapsedMinutes) * 60).toFixed(0);
-    console.log(`Current rate is ${rate} positions per hour`);
+    console.log(`${lp}Current rate is ${rate} positions per hour`);
     const pos = positionsToCheck.shift();
     console.log('Checking:');
     console.log(new Chess(pos).ascii());
-    const { results, movesToCheck } = await getAllOpeningsFromLichess(pos);
-    allResults.push(...results);
+    const res = await retryableGetOpening(pos, speed, rating);
+    allResults.push({
+      result: { white: res.white, black: res.black, draws: res.draws },
+      fen: pos,
+    });
     checkedPositions.add(pos);
-    movesToCheck.forEach((move) => {
+    res.moves.forEach((move) => {
+      if (getTotalMoves(move) < MIN_GAME_LIMIT) return;
       const newGame = new Chess(pos);
-      newGame.move(move);
+      newGame.move(move.san);
       if (checkedPositions.has(newGame.fen())) return;
       positionsToCheck.push(newGame.fen());
     });
     completed++;
   }
   console.log(allResults.length);
-  fs.writeFileSync('./data/data.json', JSON.stringify(allResults));
+  const fileName = `${speed}-${rating}.json`;
+  fs.writeFileSync(`./data/${fileName}`, JSON.stringify(allResults));
+}
+
+async function main() {
+  for (let i = START_INDEX; i < PERMUTATIONS.length; i++) {
+    const p = PERMUTATIONS[i];
+    const logPrefix = `P ${i} of ${PERMUTATIONS.length} | `;
+    await doStuff(logPrefix, p.speed, p.rating);
+  }
 }
 
 main();
