@@ -104,12 +104,17 @@ async function getAllOpeningsFromLichess(fen) {
 }
 
 async function main() {
+  const start = Date.now();
   const chess = new Chess();
   const checkedPositions = new Set();
   const positionsToCheck = [chess.fen()];
   const allResults = [];
+  let completed = 0;
   while (positionsToCheck.length > 0) {
     console.log(`${positionsToCheck.length} positions left in queue`);
+    const elapsedMinutes = (Date.now() - start) / (60 * 1000);
+    const rate = ((completed / elapsedMinutes) * 60).toFixed(0);
+    console.log(`Current rate is ${rate} positions per hour`);
     const pos = positionsToCheck.shift();
     console.log('Checking:');
     console.log(new Chess(pos).ascii());
@@ -122,6 +127,7 @@ async function main() {
       if (checkedPositions.has(newGame.fen())) return;
       positionsToCheck.push(newGame.fen());
     });
+    completed++;
   }
   console.log(allResults.length);
   fs.writeFileSync('./data/data.json', JSON.stringify(allResults));
