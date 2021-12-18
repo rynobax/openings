@@ -31,8 +31,8 @@ SPEEDS.forEach((speed) =>
   })
 );
 
-const MIN_GAME_LIMIT = 1000000;
-const MOVES_PER_VARIATION = 2;
+const MIN_GAME_LIMIT = 10000;
+const MOVES_PER_VARIATION = 50;
 
 async function getOpeningFromLichess(fen, speeds, ratings) {
   const params = new URLSearchParams();
@@ -82,10 +82,11 @@ async function doStuff(lp, speed, rating) {
     console.log(`${lp}${positionsToCheck.length} positions left in queue`);
     const elapsedMinutes = (Date.now() - start) / (60 * 1000);
     const rate = ((completed / elapsedMinutes) * 60).toFixed(0);
-    console.log(`${lp}Current rate is ${rate} positions per hour`);
+    if (completed % 25 === 0)
+      console.log(`${lp}Current rate is ${rate} positions per hour`);
     const pos = positionsToCheck.shift();
-    console.log('Checking:');
-    console.log(new Chess(pos).ascii());
+    // console.log('Checking:');
+    // console.log(new Chess(pos).ascii());
     const res = await retryableGetOpening(pos, speed, rating);
     allResults.push({
       result: { white: res.white, black: res.black, draws: res.draws },
