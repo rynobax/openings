@@ -3,35 +3,9 @@ const fetch = require('node-fetch');
 const { URLSearchParams } = require('url');
 const { Chess } = require('chess.js');
 const fs = require('fs');
+const { PERMUTATIONS, TooManyRequests, wait } = require('./util');
 
-const OPENING_BASE = 'https://explorer.lichess.ovh/lichess';
-
-class TooManyRequests extends Error {
-  constructor(message) {
-    super(message);
-  }
-}
-
-const wait = (ms) => new Promise((resolve) => setTimeout(() => resolve(), ms));
-
-const SPEEDS = [
-  'ultraBullet',
-  'bullet',
-  'blitz',
-  'rapid',
-  'classical',
-  'correspondence',
-];
-const RATINGS = [1600, 1800, 2000, 2200, 2500];
-
-const PERMUTATIONS = [];
-SPEEDS.forEach((speed) =>
-  RATINGS.forEach((rating) => {
-    PERMUTATIONS.push({ speed, rating, id: `${speed}${rating}` });
-  })
-);
-
-const MIN_GAME_LIMIT = 10000;
+const MIN_GAME_LIMIT = 1000;
 const MOVES_PER_VARIATION = 50;
 
 async function getOpeningFromLichess(fen, speeds, ratings) {
@@ -40,7 +14,7 @@ async function getOpeningFromLichess(fen, speeds, ratings) {
   params.append('speeds', speeds.join(','));
   params.append('ratings', ratings.join(','));
   params.append('moves', MOVES_PER_VARIATION);
-  return fetch(`${OPENING_BASE}?${params}`).then((res) => {
+  return fetch(`https://explorer.lichess.ovh/lichess?${params}`).then((res) => {
     if (res.status === 429) throw new TooManyRequests();
     if (res.status !== 200) {
       console.error(res);
@@ -73,7 +47,7 @@ const START_INDEX = 0;
 const start = Date.now();
 let completed = 0;
 
-async function doStuff(lp, speed, rating) {
+async function getAllPositionsForGroup(lp, speed, rating) {
   const chess = new Chess();
   const checkedPositions = new Set();
   const positionsToCheck = [chess.fen()];
@@ -92,26 +66,29 @@ async function doStuff(lp, speed, rating) {
       result: { white: res.white, black: res.black, draws: res.draws },
       fen: pos,
     });
-    checkedPositions.add(pos);
     res.moves.forEach((move) => {
       if (getTotalMoves(move) < MIN_GAME_LIMIT) return;
       const newGame = new Chess(pos);
       newGame.move(move.san);
       if (checkedPositions.has(newGame.fen())) return;
       positionsToCheck.push(newGame.fen());
+      checkedPositions.add(pos);
     });
     completed++;
   }
   console.log(allResults.length);
   const fileName = `${speed}-${rating}.json`;
-  fs.writeFileSync(`./data/${fileName}`, JSON.stringify(allResults));
+  fs.writeFileSync(
+    `./data/${MIN_GAME_LIMIT}/${fileName}`,
+    JSON.stringify(allResults)
+  );
 }
 
 async function main() {
   for (let i = START_INDEX; i < PERMUTATIONS.length; i++) {
     const p = PERMUTATIONS[i];
     const logPrefix = `P ${i} of ${PERMUTATIONS.length} | `;
-    await doStuff(logPrefix, p.speed, p.rating);
+    await getAllPositionsForGroup(logPrefix, p.speed, p.rating);
   }
 }
 

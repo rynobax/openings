@@ -3,7 +3,7 @@ import React from 'react';
 interface AppProps {}
 
 const App: React.FC<AppProps> = (props) => {
-  return null;
+  return <div>Show me a position where:</div>;
 };
 
 export default App;
